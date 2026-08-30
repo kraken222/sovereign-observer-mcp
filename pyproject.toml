@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sovereign-observer"
+version = "0.1.1"
+description = "Scan AI-generated Terraform for security misconfigurations, in your editor, before it is committed."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Sovereign Observer" }]
+keywords = ["mcp", "terraform", "iac", "security", "checkov", "cspm", "compliance"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Security",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "mcp>=1.2.0",
+    # Pinned to the same version the backend runs, so an MCP scan and a CI scan
+    # evaluate identical policy. See tests/test_parity.py.
+    "checkov==3.3.11",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4"]
+
+[project.scripts]
+sovereign-observer = "sovereign_mcp.server:main"
+
+[project.urls]
+Homepage = "https://sovereign-observer.com"
+
+# `packages` picks up sovereign_mcp/_vendor as well — hatchling does not read
+# .gitignore, so the generated engine copy ships in the wheel even though it is
+# never committed. Run scripts/vendor_engine.py BEFORE building, or the wheel
+# will be missing its engine. `make wheel` does both in order.
+[tool.hatch.build.targets.wheel]
+packages = ["sovereign_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

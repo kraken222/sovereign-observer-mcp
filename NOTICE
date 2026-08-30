@@ -1,0 +1,11 @@
+Sovereign Observer MCP
+Copyright 2026 Sovereign Observer
+
+This product includes software developed by Prisma Cloud / Bridgecrew
+(Checkov, https://github.com/bridgecrewio/checkov), licensed under the
+Apache License 2.0.
+
+sovereign_mcp/_vendor/ contains modules generated from the Sovereign Observer
+backend by scripts/vendor_engine.py. In this repository they are committed so
+the package builds standalone; upstream they are generated at build time so the
+rule logic has exactly one source. Edit them upstream, not here.
