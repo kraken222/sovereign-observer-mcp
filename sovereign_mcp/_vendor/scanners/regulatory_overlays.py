@@ -181,6 +181,11 @@ _ARTICLES_BY_FRAMEWORK = {
 _BY_DOMAIN: Dict[str, Dict[str, List[str]]] = {
     'identity': {'DORA': [_dora(9)], 'NIS2': [_nis2('i')],
                  'NCA-CCC': [_nca(2, 2)], 'NESA-IAS': [_nesa('T5')]},
+    # Same articles as identity — a credential in source is an access-management
+    # failure — plus the secure-development article, which is what makes it
+    # different from a runtime access finding.
+    'secrets': {'DORA': [_dora(9)], 'NIS2': [_nis2('i')],
+                'NCA-CCC': [_nca(2, 2)], 'NESA-IAS': [_nesa('T5')]},
     'storage': {'DORA': [_dora(9)], 'NIS2': [_nis2('i')],
                 'NCA-CCC': [_nca(2, 6)], 'NESA-IAS': [_nesa('T5')]},
     'database': {'DORA': [_dora(9)], 'NIS2': [_nis2('i')],

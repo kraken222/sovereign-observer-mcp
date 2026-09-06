@@ -80,6 +80,8 @@ _SEVERITY_BY_CHECK_ID: Dict[str, str] = {
     "CKV_AWS_23": _LOW,        # SG/rule description
     "CKV2_AWS_5": _LOW,        # SG attached to a resource
     "CKV_AWS_144": _LOW,       # S3 cross-region replication
+    # — secrets in source (see _SECRET_ATTRIBUTES) —
+    "SOV_SECRET_1": _CRITICAL, # credential written as a literal in the HCL
 }
 
 # Keyword → severity, applied to the check name when no curated id match exists.
@@ -267,6 +269,33 @@ _TERRAFORM_FIX_BY_CHECK_ID: Dict[str, Dict[str, str]] = {
             '}}'
         ),
     },
+    "SOV_SECRET_1": {
+        "summary": (
+            "Move the credential out of the Terraform source and rotate it — "
+            "it is in version control and must be treated as compromised."
+        ),
+        "terraform": (
+            '# 1. Declare it as a sensitive variable and supply the value at plan\n'
+            '#    time (TF_VAR_*, a gitignored tfvars file, or your CI secret store)\n'
+            '#    -- never as a default.\n'
+            'variable "{res}_password" {{\n'
+            '  type      = string\n'
+            '  sensitive = true\n'
+            '}}\n'
+            '\n'
+            '#    password = var.{res}_password\n'
+            '\n'
+            '# 2. Or read it from a secret manager so no human handles the value:\n'
+            'data "aws_secretsmanager_secret_version" "{res}" {{\n'
+            '  secret_id = "prod/{res}/password"\n'
+            '}}\n'
+            '\n'
+            '#    password = data.aws_secretsmanager_secret_version.{res}.secret_string\n'
+            '\n'
+            '# 3. Rotate the exposed credential. Deleting it from HEAD does not delete\n'
+            '#    it from the history of every clone that already pulled it.'
+        ),
+    },
 }
 
 
@@ -343,6 +372,9 @@ _AUTO_FIX_REJECTED = {
     "CKV_AZURE_16": "identity is a block, not a boolean attribute",
     "CKV_AZURE_230": "sku_name is a string with no single correct value",
     "CKV_GCP_79": "database_version is a string with no single correct value",
+    "SOV_SECRET_1": "the fix removes a value rather than setting one; where the "
+                    "secret should come from instead is a decision only the "
+                    "owner can make, and the exposed value still needs rotating",
 }
 
 # The single attribute each auto-fixable check sets, expressed structurally so
@@ -377,6 +409,65 @@ _META_LOOP_PATTERNS = (
     re.compile(r'(?m)^\s*count\s*='),
     re.compile(r'(?m)^\s*for_each\s*='),
 )
+
+
+# ── hard coded credentials in the HCL itself ─────────────────────────────────
+# Checkov does not catch these. Its `terraform` framework has no check for a
+# literal in a credential attribute, and its `secrets` framework is
+# entropy-based, so it walks straight past `password = "hunter2"` — verified
+# against checkov 3.3.11. That is the single most obvious thing in a bad .tf
+# file and the one an LLM reviewer always flags, so its absence read as the
+# scanner being unserious.
+#
+# Exact attribute names, never substrings. `secret_id`, `secret_arn`,
+# `key_name` and friends *reference* a secret rather than containing one, and a
+# substring match would flag every one of them. A security check that cries
+# wolf gets muted, and then it catches nothing at all.
+#
+# `connection_string` is deliberately absent: it frequently holds only an
+# endpoint, and this list is worth more narrow than broad.
+_SECRET_ATTRIBUTES = frozenset({
+    "password",
+    "master_password",
+    "admin_password",
+    "administrator_login_password",
+    "root_password",
+    "db_password",
+    "passphrase",
+    "secret",
+    "client_secret",
+    "secret_key",
+    "secret_access_key",
+    "access_key",
+    "api_key",
+    "auth_token",
+    "token",
+    "private_key",
+    "secret_string",
+    "shared_access_key",
+})
+
+# `attr = "literal"` on one line, and nothing else. Anything computed —
+# `var.db_password`, `file(...)`, `jsonencode(...)`, a heredoc, a list — fails
+# to match, which is what keeps the false-positive rate at zero. A commented
+# line cannot match either: the attribute name has to start the line.
+_SECRET_ASSIGNMENT = re.compile(
+    r'^\s*(?P<attr>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*"(?P<value>[^"]*)"\s*(?:[#/].*)?$'
+)
+
+# Block headers we can name a finding after: `resource "aws_db_instance" "prod"`
+# -> aws_db_instance.prod, `provider "aws"` -> provider.aws.
+_BLOCK_HEADER = re.compile(
+    r'^\s*(?P<kind>resource|data|provider|module|variable|output)\s+(?P<labels>[^{]*)\{'
+)
+_QUOTED_LABEL = re.compile(r'"([^"]*)"')
+
+# Strip string contents before counting braces, so a `{` inside a value does not
+# throw the block tracker off.
+_HCL_STRING = re.compile(r'"(?:[^"\\]|\\.)*"')
+
+SECRET_CHECK_ID = "SOV_SECRET_1"
+SECRET_CHECK_NAME = "Ensure no credential is hard coded in Terraform source"
 
 
 class CheckovScanError(RuntimeError):
@@ -474,6 +565,19 @@ class CheckovScanner:
             item["in_changed_file"] = (item.get("file") in changed_set) if changed_set else None
             cls._set_auto_fixable(item, sources, allow_auto_fix)
             findings.append(item)
+
+        # Checkov has no policy for a credential written straight into the HCL,
+        # so this pass runs alongside it rather than through it. Source-only:
+        # plan JSON has the values resolved and no line to anchor to.
+        secrets = cls._scan_hardcoded_secrets(sources)
+        for item in secrets:
+            item["in_changed_file"] = (
+                (item.get("file") in changed_set) if changed_set else None
+            )
+        findings.extend(secrets)
+        if secrets:
+            summary["failed"] = (summary.get("failed") or 0) + len(secrets)
+
         provider = cls._detect_provider(failed) or "aws"
         return {"findings": findings, "summary": summary, "provider": provider}
 
@@ -512,6 +616,95 @@ class CheckovScanner:
                 "attribute": attr,
                 "value": value,
             }
+
+    # ── hard coded credentials ────────────────────────────────────────────
+    @classmethod
+    def _scan_hardcoded_secrets(cls, sources: Optional[Dict[str, str]]) -> List[dict]:
+        """Find credentials written as string literals in the HCL.
+
+        Runs over the raw sources rather than Checkov's output because Checkov
+        has no policy for this — see ``_SECRET_ATTRIBUTES``. Source-only, so
+        plan-JSON scans (where ``sources`` is None) skip it: a plan has the
+        values resolved and no file to point at.
+
+        The finding never carries the secret itself. It reports the attribute
+        and the line, which is enough to find it and does not copy it into a
+        scan record, a PR comment, or an assistant's context window.
+        """
+        findings: List[dict] = []
+        for path, content in (sources or {}).items():
+            if not isinstance(content, str):
+                continue
+            file_path = cls._norm_path(path)
+            for line_no, attr, address in cls._iter_secret_assignments(content):
+                local_name = cls._local_name(address)
+                item = {
+                    "id": SECRET_CHECK_ID,
+                    "check_id": SECRET_CHECK_ID,
+                    "title": SECRET_CHECK_NAME,
+                    "severity": cls._severity_for(SECRET_CHECK_ID, SECRET_CHECK_NAME, None),
+                    "service": cls._service_for(address) if "." in address else "IaC",
+                    "resource": address,
+                    "resource_address": address,
+                    "evidence": (
+                        f"{SECRET_CHECK_ID}: attribute \"{attr}\" is assigned a literal "
+                        f"value — {address or file_path}"
+                    ),
+                    "cis_control": None,
+                    "file": file_path or None,
+                    "line": line_no,
+                    "line_match": "attribute",
+                    "remediation_docs": None,
+                    "auto_capable": False,
+                    # Never mechanically applied: the fix removes a value rather
+                    # than setting one, and only the owner knows where the value
+                    # should come from instead.
+                    "auto_fixable": False,
+                    "secret_attribute": attr,
+                }
+                cls._attach_remediation(
+                    item, SECRET_CHECK_ID, SECRET_CHECK_NAME, local_name, item["service"]
+                )
+                findings.append(item)
+        return findings
+
+    @classmethod
+    def _iter_secret_assignments(cls, content: str):
+        """Yield ``(line_number, attribute, resource_address)`` per literal."""
+        address = ""
+        depth = 0
+        for idx, raw_line in enumerate(content.splitlines(), start=1):
+            stripped = _HCL_STRING.sub('""', raw_line)
+
+            if depth == 0:
+                header = _BLOCK_HEADER.match(raw_line)
+                if header:
+                    address = cls._address_from_header(header)
+
+            match = _SECRET_ASSIGNMENT.match(raw_line)
+            if match:
+                attr = match.group("attr").lower()
+                value = match.group("value")
+                # An empty string is a placeholder, not a credential, and
+                # "${...}" is a reference that happens to be quoted.
+                if attr in _SECRET_ATTRIBUTES and value and "${" not in value:
+                    yield idx, attr, address
+
+            depth += stripped.count("{") - stripped.count("}")
+            if depth <= 0:
+                depth = 0
+                address = ""
+
+    @staticmethod
+    def _address_from_header(header) -> str:
+        """`resource "aws_db_instance" "prod"` -> ``aws_db_instance.prod``."""
+        kind = header.group("kind")
+        labels = _QUOTED_LABEL.findall(header.group("labels") or "")
+        if not labels:
+            return kind
+        if kind == "resource":
+            return ".".join(labels)
+        return ".".join([kind, *labels])
 
     # ── dynamic / count / for_each detection ───────────────────────────────
     @classmethod

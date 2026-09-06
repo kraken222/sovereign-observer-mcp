@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sovereign-observer"
-version = "0.1.1"
+version = "0.2.0"
 description = "Scan AI-generated Terraform for security misconfigurations, in your editor, before it is committed."
 readme = "README.md"
 requires-python = ">=3.10"

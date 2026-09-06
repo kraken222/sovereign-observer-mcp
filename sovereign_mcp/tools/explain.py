@@ -19,7 +19,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from ..engine import auto_fix_attributes, auto_fixable_checks, curated_terraform_fixes
+from ..engine import (
+    auto_fix_attributes,
+    auto_fix_rejections,
+    auto_fixable_checks,
+    curated_terraform_fixes,
+)
 
 DOCS_URL = "https://sovereign-observer.com"
 
@@ -75,7 +80,10 @@ def explain(
             "Call apply_fix to get the patched HCL."
         )
     else:
+        reason = auto_fix_rejections().get(check_id)
         out["auto_fix_note"] = (
+            f"Advisory only — {reason}. Apply it by hand and review the diff."
+            if reason else
             "Advisory only. This fix either adds new resources or touches a "
             "resource shape where a mechanical edit can break a working "
             "configuration. Apply it by hand and review the diff."

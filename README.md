@@ -6,6 +6,13 @@ An MCP server that scans Terraform for security misconfigurations **while the co
 being generated**, not after it lands in a pull request. It runs locally, needs no
 account, and your infrastructure code never leaves your machine.
 
+Detection is [Checkov](https://github.com/bridgecrewio/checkov) (Apache-2.0), vendored so
+it runs offline and pinned to the same version the backend evaluates. What this adds is
+the shape around it: findings compact enough to sit in an assistant's context, curated
+remediation per check, a narrow allowlist of fixes that are safe to apply mechanically,
+hardened templates and org policy served *before* generation, and a handful of checks
+Checkov does not cover — a credential written as a literal in the HCL among them.
+
 ```
 You:       "add an RDS instance for the orders service"
 Assistant: [writes HCL] → [scans it] → [fixes 4 findings] → shows you the result

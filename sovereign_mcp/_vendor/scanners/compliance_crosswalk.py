@@ -67,6 +67,13 @@ CROSSWALK_BY_DOMAIN = {
         {'framework': 'NIST', 'control': 'SC-28'},
         {'framework': 'PCI', 'control': '3.4'},
     ],
+    'secrets': [
+        {'framework': 'SOC2', 'control': 'CC6.1'},
+        {'framework': 'ISO27001', 'control': 'A.5.17'},   # Authentication information
+        {'framework': 'ISO27001', 'control': 'A.8.24'},   # Use of cryptography
+        {'framework': 'NIST', 'control': 'IA-5'},         # Authenticator management
+        {'framework': 'PCI', 'control': '8.3'},
+    ],
     'configuration': [
         {'framework': 'SOC2', 'control': 'CC8.1'},
         {'framework': 'ISO27001', 'control': 'A.8.9'},
@@ -80,6 +87,11 @@ CROSSWALK_BY_DOMAIN = {
 # Ordered most-specific first — 'iam' before 'storage' matters, because an IAM
 # policy on a bucket is an identity finding, not a storage one.
 _DOMAIN_TOKENS = (
+    # First, and deliberately narrow. A credential committed to source is an
+    # authentication-material problem, not a storage or configuration one — but
+    # widening these tokens (to 'secret' or 'password') would re-classify a
+    # large number of existing findings, which is a separate decision.
+    ('secrets', ['hard coded', 'hardcoded', 'hard-coded']),
     ('identity', ['iam', 'identity', 'mfa', 'root', 'user', 'role', 'policy',
                   'permission', 'owner', 'admin']),
     ('logging', ['cloudtrail', 'logging', 'log ', 'audit log', 'flow log']),

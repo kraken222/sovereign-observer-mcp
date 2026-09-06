@@ -140,6 +140,18 @@ def auto_fix_attributes() -> dict:
     return dict(scanner_module()._AUTO_FIX_ATTRIBUTE)
 
 
+def auto_fix_rejections() -> dict:
+    """``check_id -> why this fix is deliberately not applied mechanically``.
+
+    The generic advisory wording ("adds new resources, or touches a shape where
+    a mechanical edit can break a working config") is true of most held-back
+    checks and wrong about some of them. Where the engine recorded a specific
+    reason, say that instead — an assistant that knows *why* a fix is held back
+    stops trying to synthesise one.
+    """
+    return dict(scanner_module()._AUTO_FIX_REJECTED)
+
+
 def curated_terraform_fixes() -> dict:
     """``check_id -> {summary, terraform}`` paste-ready snippets."""
     return dict(scanner_module()._TERRAFORM_FIX_BY_CHECK_ID)
