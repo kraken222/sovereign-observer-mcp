@@ -93,15 +93,22 @@ mcp = MCPServer(
         "user. Pass `files` (filename -> HCL content) to scan content that is not saved "
         "yet, or `paths` to scan .tf files and directories on disk. Runs locally; nothing "
         "is uploaded. Returns findings ordered by severity, each with a file, line, and "
-        "whether an exact fix is available."
+        "whether an exact fix is available. Every finding is tagged with the environment "
+        "it was inferred to belong to (production/staging/development/unknown). Set "
+        "`environment_aware` to let resilience and housekeeping findings report lower on "
+        "a non-production stack; exposure, encryption, identity and hardcoded credentials "
+        "never move, in any environment."
     ),
 )
 def scan_terraform(
     files: dict[str, str] | None = None,
     paths: list[str] | None = None,
+    environment_aware: bool = False,
 ) -> dict[str, Any]:
     try:
-        return scan_tool.run_scan(files=files, paths=paths)
+        return scan_tool.run_scan(
+            files=files, paths=paths, environment_aware=environment_aware
+        )
     except EngineUnavailable as exc:
         return {"error": str(exc)}
 

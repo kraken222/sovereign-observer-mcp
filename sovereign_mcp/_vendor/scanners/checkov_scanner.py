@@ -466,6 +466,10 @@ _QUOTED_LABEL = re.compile(r'"([^"]*)"')
 # throw the block tracker off.
 _HCL_STRING = re.compile(r'"(?:[^"\\]|\\.)*"')
 
+# Re-ranking after an environment adjustment has to leave the list ordered the
+# way every caller already assumes it is.
+_SEVERITY_RANK = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}
+
 SECRET_CHECK_ID = "SOV_SECRET_1"
 SECRET_CHECK_NAME = "Ensure no credential is hard coded in Terraform source"
 
@@ -507,6 +511,7 @@ class CheckovScanner:
         tf_sources: Dict[str, str],
         changed_files: Optional[List[str]] = None,
         timeout: Optional[int] = None,
+        environment_aware: bool = False,
     ) -> dict:
         """Scan a mapping of ``relpath -> .tf contents``.
 
@@ -523,7 +528,8 @@ class CheckovScanner:
 
         raw = cls._run_checkov_dir(tf_sources, timeout=timeout or cls.DEFAULT_TIMEOUT)
         return cls._build_result(raw, changed_files=changed_files, anchor_lines=True,
-                                 sources=tf_sources, allow_auto_fix=True)
+                                 sources=tf_sources, allow_auto_fix=True,
+                                 environment_aware=environment_aware)
 
     @classmethod
     def analyze_plan(
@@ -553,7 +559,8 @@ class CheckovScanner:
     @classmethod
     def _build_result(cls, raw, changed_files, anchor_lines: bool,
                       sources: Optional[Dict[str, str]] = None,
-                      allow_auto_fix: bool = False) -> dict:
+                      allow_auto_fix: bool = False,
+                      environment_aware: bool = False) -> dict:
         failed = cls._extract_failed_checks(raw)
         summary = cls._extract_summary(raw)
         changed_set = {cls._norm_path(p) for p in (changed_files or [])}
@@ -577,6 +584,18 @@ class CheckovScanner:
         findings.extend(secrets)
         if secrets:
             summary["failed"] = (summary.get("failed") or 0) + len(secrets)
+
+        # Environment is inferred from the sources, so a plan-JSON scan gets
+        # nothing here and keeps every severity as-is. Annotation is always on
+        # because knowing the environment costs nothing; re-ranking is opt-in,
+        # because lowering a finding past someone's merge gate is their call.
+        if sources:
+            from . import environment_context
+            environment_context.annotate(findings, sources, apply_severity=environment_aware)
+            if environment_aware:
+                findings.sort(
+                    key=lambda f: _SEVERITY_RANK.get(f.get("severity"), 99)
+                )
 
         provider = cls._detect_provider(failed) or "aws"
         return {"findings": findings, "summary": summary, "provider": provider}

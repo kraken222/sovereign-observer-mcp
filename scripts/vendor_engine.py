@@ -37,6 +37,7 @@ MODULES = {
     "backend/app/services/scanners/hcl_to_plan.py": "scanners/hcl_to_plan.py",
     "backend/app/services/scanners/regulatory_overlays.py": "scanners/regulatory_overlays.py",
     "backend/app/services/scanners/compliance_crosswalk.py": "scanners/compliance_crosswalk.py",
+    "backend/app/services/scanners/environment_context.py": "scanners/environment_context.py",
     # The HCL fix-applier the GitHub Action uses. Shared so a fix applied in the
     # editor is byte-for-byte the fix the Action would have applied in CI.
     "integrations/github-action/scan.py": "hcl_fixer.py",

@@ -90,11 +90,33 @@ fast.
 
 ---
 
+## Environments
+
+A scanner that reports the same severity everywhere gets muted. Multi-AZ and deletion
+protection are the right call in production and noise on a sandbox torn down nightly, and
+once someone has dismissed the same Critical five times on a scratch stack they stop
+reading the output at all.
+
+So every finding is tagged with the environment it was inferred to belong to, from an
+`Environment` tag or the directory the file sits in. `unknown` is a normal answer and
+changes nothing.
+
+Passing `environment_aware` to `scan_terraform` lets that inference move severity — but
+only for an explicit allowlist of resilience, monitoring and housekeeping checks. **Public
+access, encryption, identity and hardcoded credentials never move, in any environment.** A
+dev bucket is usually where last month's production dump lives.
+
+It is off by default, because a scan that quietly drops a finding below the level your
+merge gate keys on has weakened your pipeline without asking. Nothing is ever lowered
+below `Low`, and a finding that moved says what it moved from.
+
+---
+
 ## Tools
 
 | Tool | What it does |
 |---|---|
-| `scan_terraform` | Scan HCL — from disk or an unsaved buffer. Returns findings by severity with file and line. |
+| `scan_terraform` | Scan HCL — from disk or an unsaved buffer. Returns findings by severity with file and line, each tagged with its inferred environment. |
 | `explain_finding` | The full remediation for one finding: what is wrong and the exact Terraform to fix it. |
 | `apply_fixes` | Apply the mechanically-safe fixes and return patched HCL. |
 | `secure_template` | A hardened starting point for a resource type, so the insecure version never gets written. |

@@ -77,8 +77,17 @@ def _norm(path: str) -> str:
 def run_scan(
     files: Optional[Dict[str, str]] = None,
     paths: Optional[List[str]] = None,
+    environment_aware: bool = False,
 ) -> Dict[str, Any]:
-    """Scan Terraform sources and return a context-frugal result."""
+    """Scan Terraform sources and return a context-frugal result.
+
+    ``environment_aware`` lets resilience and housekeeping findings report lower
+    on a non-production stack, so a scratch environment does not bury the things
+    that matter under Criticals nobody intends to act on. Off by default: it can
+    move a finding below the level a merge gate keys on, which is the caller's
+    decision to make. Exposure, encryption, identity and credentials in source
+    never move, in any environment.
+    """
     require_checkov()
     sources = collect_sources(files=files, paths=paths)
 
@@ -94,7 +103,7 @@ def run_scan(
             ),
         }
 
-    result = checkov_scanner_cls().analyze(sources)
+    result = checkov_scanner_cls().analyze(sources, environment_aware=environment_aware)
     findings = [_compact(f) for f in (result.get("findings") or [])]
 
     # Organization rules, evaluated locally against the same sources. Returns
@@ -163,4 +172,11 @@ def _compact(finding: Dict[str, Any]) -> Dict[str, Any]:
         # Stated explicitly so a company rule is never mistaken for a built-in
         # one — they have different fixes and different people to argue with.
         "source": "builtin",
+        # Best-effort, and "unknown" is a normal answer. Present whether or not
+        # severity was allowed to move, because it is useful context on its own.
+        "environment": finding.get("environment"),
+        **(
+            {"severity_lowered_from": finding.get("severity_before_environment")}
+            if finding.get("severity_before_environment") else {}
+        ),
     }

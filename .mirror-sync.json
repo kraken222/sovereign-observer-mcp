@@ -1,6 +1,6 @@
 {
   "_comment": "Upstream hashes of files that deliberately differ in this mirror. scripts/sync_mirror.py stops when one of these moves upstream, so the change is ported by hand rather than clobbering the mirror's own text. Written by the script.",
   "divergent_upstream": {
-    "README.md": "9cc8a57ac6c639b459fc739113098f1f7c7f3623490157114857d6e9b99221bd"
+    "README.md": "d1c9c0d25ed6176c50530fc729960456b663f725f4cb08e146a9c2026f0c0cac"
   }
 }
